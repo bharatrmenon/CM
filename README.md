@@ -12,24 +12,18 @@ A chart-reading trainer. See 60 candles of a real historical stock chart, call w
 | `build-library.mjs` | Fetches real daily equities from Stooq → writes `chart-library.json`. |
 | `.nojekyll` | Tells GitHub Pages to serve files as-is. |
 
-The app runs on **sample data** until a `chart-library.json` sits next to `index.html`.
+The app now ships with **real historical data embedded** in `index.html` (≈200 reps + 9 boss levels from Yahoo Finance), so it works out of the box on any host — no separate data file needed.
 
-## Run locally
+## Refresh the chart data
 
-```bash
-npx serve .        # open the printed URL
-```
-
-## Generate real chart data
-
-Needs Node 18+ and runs on your own machine (needs internet):
+Real data is baked into `index.html`. To pull newer/more charts, regenerate and re-embed (Node 18+):
 
 ```bash
-node build-library.mjs        # writes chart-library.json
-git add chart-library.json && git commit -m "Add real chart data" && git push
+npm install yahoo-finance2     # one time
+node build-library.mjs         # writes chart-library.json
 ```
 
-Commit the JSON so the live site serves real charts. The app auto-detects it and turns off sample data.
+Then re-embed that JSON into `index.html` (replace the `window.CL=…` block) — or hand the file to Claude and it'll do the swap.
 
 ## Deploy — GitHub Pages
 
@@ -45,6 +39,14 @@ Connect this repo to **Cloudflare Pages** for a custom domain + CDN, with auto-d
 1. Cloudflare dashboard → Workers & Pages → Create → Pages → **Connect to Git** → pick this repo.
 2. Framework preset: **None**. Build command: *(empty)*. Output directory: `/`.
 3. Deploy, then add your domain under **Custom domains**.
+
+## Backend & going live
+
+- **`LAUNCH.md`** — running checklist of everything needed to ship as a paid product.
+- **`SUPABASE-SETUP.md`** — ~10-min guide to turn on the global leaderboard.
+- **`supabase-schema.sql`** — the database table + security policies to run in Supabase.
+
+The leaderboard is built in but dormant until you paste your Supabase URL + anon key into `index.html` (see the setup guide). With them blank, the app runs local-only and never breaks.
 
 ## Roadmap to revenue
 
