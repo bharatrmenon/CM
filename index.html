@@ -127,6 +127,12 @@
   .boss-banner{display:none; align-items:center; gap:12px; margin:0 6px 10px; padding:11px 14px; border-radius:12px; background:linear-gradient(90deg,var(--accent-dim),transparent); border:1px solid rgba(124,108,255,.3); border-left:3px solid var(--accent); font-size:13.5px}
   .boss-banner.show{display:flex}
   .boss-banner .news{color:var(--muted)} .boss-banner b{color:#b4abff; font-family:var(--mono); font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; white-space:nowrap}
+  .indbar{display:flex; align-items:center; gap:7px; padding:0 6px 12px; flex-wrap:wrap}
+  .indlabel{font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); margin-right:2px}
+  .chip{border:1px solid var(--line2); background:var(--panel2); color:var(--muted); font-family:var(--mono); font-size:11.5px; font-weight:700; padding:7px 12px; border-radius:9px; cursor:pointer; transition:.12s}
+  .chip:hover{color:var(--text)}
+  .chip.active{color:#cfe9ff; border-color:rgba(94,211,255,.5); background:rgba(94,211,255,.12)}
+  .indbar .sep{flex:1}
   .reveal{display:none; padding:6px 8px 4px; text-align:center}
   .reveal-actions{margin-top:14px; display:flex; gap:10px; justify-content:center; align-items:center; flex-wrap:wrap}
   .replay{display:inline-flex; align-items:center; gap:8px; background:transparent; color:var(--text); border:1px solid var(--line2); padding:13px 20px; border-radius:999px; font-weight:700; font-size:14px; cursor:pointer; transition:.15s}
@@ -251,6 +257,24 @@
         </div>
       </div>
 
+      <div class="indbar" id="indbar">
+        <span class="indlabel">Indicators</span>
+        <button class="chip" data-ind="ma20">MA20</button>
+        <button class="chip" data-ind="ma50">MA50</button>
+        <button class="chip" data-ind="ema21">EMA21</button>
+        <button class="chip" data-ind="bb">BB</button>
+        <div class="seg" role="group" aria-label="Oscillator">
+          <button data-osc="none" class="active">Osc off</button>
+          <button data-osc="rsi">RSI</button>
+          <button data-osc="macd">MACD</button>
+        </div>
+        <span class="sep"></span>
+        <div class="seg" role="group" aria-label="Reveal mode" title="Study shows the ticker up front; Test hides it until you call">
+          <button data-study="test" class="active">Test</button>
+          <button data-study="study">Study</button>
+        </div>
+      </div>
+
       <div class="chart-box" id="arenaBox">
         <div class="readout" id="readout"></div>
         <div class="verdict" id="verdict"><div class="verdict-card"><div class="verdict-tag" id="vTag">—</div><div class="verdict-move" id="vMove"></div><div class="verdict-rule" id="vRule"></div></div></div>
@@ -323,27 +347,73 @@
     out.push({o:seg[0].o, c:seg[seg.length-1].c, h:Math.max(...seg.map(s=>s.h)), l:Math.min(...seg.map(s=>s.l)), t:seg[seg.length-1].t});
   } return out; }
 
+  /* ---------- indicators ---------- */
+  function SMA(a,n){const o=Array(a.length).fill(null);let s=0;for(let i=0;i<a.length;i++){s+=a[i];if(i>=n)s-=a[i-n];if(i>=n-1)o[i]=s/n;}return o;}
+  function EMA(a,n){const o=Array(a.length).fill(null);const k=2/(n+1);let prev=null;for(let i=0;i<a.length;i++){if(i<n-1)continue;if(prev==null){let s=0;for(let j=i-n+1;j<=i;j++)s+=a[j];prev=s/n;}else prev=a[i]*k+prev*(1-k);o[i]=prev;}return o;}
+  function BB(a,n,m){const mid=SMA(a,n),u=Array(a.length).fill(null),l=Array(a.length).fill(null);for(let i=n-1;i<a.length;i++){let s=0;for(let j=i-n+1;j<=i;j++)s+=(a[j]-mid[i])**2;const sd=Math.sqrt(s/n);u[i]=mid[i]+m*sd;l[i]=mid[i]-m*sd;}return {mid,u,l};}
+  function RSI(a,n){const o=Array(a.length).fill(null);if(a.length<=n)return o;let ag=0,al=0;for(let i=1;i<=n;i++){const d=a[i]-a[i-1];ag+=Math.max(d,0);al+=Math.max(-d,0);}ag/=n;al/=n;o[n]=al===0?100:100-100/(1+ag/al);for(let i=n+1;i<a.length;i++){const d=a[i]-a[i-1];ag=(ag*(n-1)+Math.max(d,0))/n;al=(al*(n-1)+Math.max(-d,0))/n;o[i]=al===0?100:100-100/(1+ag/al);}return o;}
+  function MACD(a){const f=EMA(a,12),s=EMA(a,26);const macd=a.map((_,i)=>(f[i]!=null&&s[i]!=null)?f[i]-s[i]:null);const ms=macd.filter(v=>v!=null);const sr=EMA(ms,9);const signal=Array(a.length).fill(null);let k=0;for(let i=0;i<a.length;i++){if(macd[i]!=null){signal[i]=sr[k];k++;}}const hist=a.map((_,i)=>(macd[i]!=null&&signal[i]!=null)?macd[i]-signal[i]:null);return {macd,signal,hist};}
+
   /* ---------- chart render ---------- */
-  let CHART=null; // {lo,hi,slot,histLen,cands}
+  let CHART=null;
+  const PRICE_PLOT=320, OSC_H=140, OGAP=12;
   function renderBase(setup, revealed, tf){
     const dh = tf==='W'?aggregate(setup.history,5):setup.history;
     const df = tf==='W'?aggregate(setup.future,5):setup.future;
-    const cands=dh.concat(df), histLen=dh.length, n=cands.length;
+    const cands=dh.concat(df), histLen=dh.length, n=cands.length, closes=cands.map(c=>c.c);
+    const ind=S.ind, oscOn=ind.osc!=='none';
+    const priceBot=PADTOP+PRICE_PLOT, oscTop=priceBot+OGAP, Htot=oscOn?oscTop+OSC_H+PADBOT:priceBot+PADBOT;
     let lo=Infinity,hi=-Infinity; cands.forEach(c=>{if(c.l<lo)lo=c.l;if(c.h>hi)hi=c.h;});
+    // expand range to fit Bollinger if shown
+    if(ind.bb){const b=BB(closes,20,2);b.u.forEach(v=>{if(v!=null&&v>hi)hi=v;});b.l.forEach(v=>{if(v!=null&&v<lo)lo=v;});}
     const pad=(hi-lo)*.08||1; lo-=pad; hi+=pad;
-    const plotW=W-PADX*2, plotH=H-PADTOP-PADBOT, slot=plotW/n, bw=Math.max(2.2,slot*.62);
-    const x=i=>PADX+slot*i+slot/2, y=p=>PADTOP+(hi-p)/(hi-lo)*plotH;
-    CHART={lo,hi,slot,plotH,histLen,cands,x,y,dividerX:PADX+slot*histLen};
+    const plotW=W-PADX*2, slot=plotW/n, bw=Math.max(2.2,slot*.62);
+    const x=i=>PADX+slot*i+slot/2, y=p=>PADTOP+(hi-p)/(hi-lo)*PRICE_PLOT;
+    CHART={lo,hi,slot,plotH:PRICE_PLOT,histLen,cands,x,y,dividerX:PADX+slot*histLen,H:Htot,priceBot};
     let g='';
-    for(let k=0;k<=4;k++){const yy=PADTOP+plotH*k/4; g+=`<line class="grid-l" x1="${PADX}" y1="${yy.toFixed(1)}" x2="${W-PADX}" y2="${yy.toFixed(1)}"/>`;}
+    for(let k=0;k<=4;k++){const yy=PADTOP+PRICE_PLOT*k/4; g+=`<line class="grid-l" x1="${PADX}" y1="${yy.toFixed(1)}" x2="${W-PADX}" y2="${yy.toFixed(1)}"/>`;}
+
+    // candles
     function candle(c,i,futK){const up=c.c>=c.o,cl=up?'up':'dn',cx=x(i),yo=y(c.o),yc=y(c.c),yh=y(c.h),yl=y(c.l);
       const top=Math.min(yo,yc),bh=Math.max(1.3,Math.abs(yc-yo)),fut=futK>=0,op=fut?(revealed?1:0):1,id=fut?` id="fc${futK}"`:'';
       return `<g${id} style="opacity:${op}"><line class="wick wick-${cl}" x1="${cx.toFixed(1)}" y1="${yh.toFixed(1)}" x2="${cx.toFixed(1)}" y2="${yl.toFixed(1)}"/><rect class="candle-${cl}" x="${(cx-bw/2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="1"/></g>`;}
     cands.forEach((c,i)=> g+=candle(c,i, i>=histLen? i-histLen : -1));
-    g+=`<line class="nowline" x1="${CHART.dividerX.toFixed(1)}" y1="${PADTOP}" x2="${CHART.dividerX.toFixed(1)}" y2="${H-PADBOT}"/>`;
+
+    // overlays
+    const poly=(vals,color,w,dash)=>{let p='';for(let i=0;i<vals.length;i++){if(vals[i]==null)continue;p+=`${x(i).toFixed(1)},${y(vals[i]).toFixed(1)} `;}return p?`<polyline points="${p.trim()}" fill="none" stroke="${color}" stroke-width="${w}"${dash?` stroke-dasharray="${dash}"`:''} stroke-linejoin="round" opacity=".95"/>`:'';};
+    const legend=[];
+    if(ind.bb){const b=BB(closes,20,2); g+=poly(b.u,'rgba(140,124,255,.6)',1)+poly(b.l,'rgba(140,124,255,.6)',1)+poly(b.mid,'rgba(140,124,255,.5)',1,'4 3'); legend.push(['BB 20,2','#8C7CFF']);}
+    if(ind.ma20){g+=poly(SMA(closes,20),'#5ED3FF',1.6); legend.push(['MA20','#5ED3FF']);}
+    if(ind.ma50){g+=poly(SMA(closes,50),'#F5C45A',1.6); legend.push(['MA50','#F5C45A']);}
+    if(ind.ema21){g+=poly(EMA(closes,21),'#FF9FB1',1.6); legend.push(['EMA21','#FF9FB1']);}
+    if(legend.length){let lx=PADX+6,ly=PADTOP+13;legend.forEach(([t,c])=>{g+=`<rect x="${lx}" y="${ly-8}" width="9" height="3" fill="${c}" rx="1"/><text x="${lx+13}" y="${ly-4}" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="10" fill="#9aa6b8">${t}</text>`;lx+=t.length*6.5+30;});}
+
+    // oscillator pane
+    if(oscOn){
+      g+=`<rect x="${PADX}" y="${oscTop}" width="${plotW.toFixed(1)}" height="${OSC_H}" fill="rgba(255,255,255,.02)"/><line x1="${PADX}" y1="${oscTop}" x2="${W-PADX}" y2="${oscTop}" stroke="rgba(255,255,255,.1)" stroke-width="1"/>`;
+      if(ind.osc==='rsi'){
+        const r=RSI(closes,14), yR=v=>oscTop+(100-v)/100*OSC_H;
+        [70,50,30].forEach(lv=>{g+=`<line x1="${PADX}" y1="${yR(lv).toFixed(1)}" x2="${W-PADX}" y2="${yR(lv).toFixed(1)}" stroke="rgba(255,255,255,.10)" stroke-width="1"${lv!==50?' stroke-dasharray="4 3"':''}/>`;});
+        let p='';for(let i=0;i<r.length;i++){if(r[i]==null)continue;p+=`${x(i).toFixed(1)},${yR(r[i]).toFixed(1)} `;}
+        g+=`<polyline points="${p.trim()}" fill="none" stroke="#7C6CFF" stroke-width="1.6" stroke-linejoin="round"/>`;
+        g+=`<text x="${PADX+5}" y="${oscTop+14}" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="10" fill="#9aa6b8">RSI 14</text>`;
+      } else {
+        const {macd,signal,hist}=MACD(closes); let mx=1e-6;
+        [...macd,...signal,...hist].forEach(v=>{if(v!=null)mx=Math.max(mx,Math.abs(v));});
+        const mid=oscTop+OSC_H/2, yM=v=>mid-(v/mx)*(OSC_H/2*0.88);
+        g+=`<line x1="${PADX}" y1="${mid.toFixed(1)}" x2="${W-PADX}" y2="${mid.toFixed(1)}" stroke="rgba(255,255,255,.12)" stroke-width="1"/>`;
+        const hw=Math.max(1.5,slot*.5);
+        for(let i=0;i<hist.length;i++){if(hist[i]==null)continue;const hy=yM(hist[i]);g+=`<rect x="${(x(i)-hw/2).toFixed(1)}" y="${Math.min(mid,hy).toFixed(1)}" width="${hw.toFixed(1)}" height="${Math.max(.8,Math.abs(hy-mid)).toFixed(1)}" fill="${hist[i]>=0?'rgba(34,211,154,.55)':'rgba(255,92,122,.55)'}"/>`;}
+        const ln=(arr,col)=>{let p='';for(let i=0;i<arr.length;i++){if(arr[i]==null)continue;p+=`${x(i).toFixed(1)},${yM(arr[i]).toFixed(1)} `;}return p?`<polyline points="${p.trim()}" fill="none" stroke="${col}" stroke-width="1.5" stroke-linejoin="round"/>`:'';};
+        g+=ln(macd,'#5ED3FF')+ln(signal,'#F5C45A');
+        g+=`<text x="${PADX+5}" y="${oscTop+14}" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="10" fill="#9aa6b8">MACD 12,26,9</text>`;
+      }
+    }
+
+    g+=`<line class="nowline" x1="${CHART.dividerX.toFixed(1)}" y1="${PADTOP}" x2="${CHART.dividerX.toFixed(1)}" y2="${Htot-PADBOT}"/>`;
     const vw=W-PADX-CHART.dividerX;
-    const veil=`<g class="veil" style="opacity:${revealed?0:1}"><rect class="veil-fill" x="${CHART.dividerX.toFixed(1)}" y="0" width="${(vw+PADX).toFixed(1)}" height="${H}"/><text class="qmark" x="${(CHART.dividerX+vw/2).toFixed(1)}" y="${(H/2-4).toFixed(1)}">?</text><text class="veil-label" x="${(CHART.dividerX+vw/2).toFixed(1)}" y="${(H/2+22).toFixed(1)}">HIDDEN</text></g>`;
-    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${revealed?'Revealed chart':'Partial chart, ending hidden'}">`
+    const veil=`<g class="veil" style="opacity:${revealed?0:1}"><rect class="veil-fill" x="${CHART.dividerX.toFixed(1)}" y="0" width="${(vw+PADX).toFixed(1)}" height="${Htot}"/><text class="qmark" x="${(CHART.dividerX+vw/2).toFixed(1)}" y="${(priceBot/2+8).toFixed(1)}">?</text><text class="veil-label" x="${(CHART.dividerX+vw/2).toFixed(1)}" y="${(priceBot/2+30).toFixed(1)}">HIDDEN</text></g>`;
+    return `<svg viewBox="0 0 ${W} ${Htot}" preserveAspectRatio="none" role="img" aria-label="${revealed?'Revealed chart':'Partial chart, ending hidden'}">`
       +`<defs><linearGradient id="veilg" x1="0" x2="1"><stop offset="0" stop-color="#0A0E14" stop-opacity=".55"/><stop offset=".18" stop-color="#0C111A" stop-opacity=".96"/><stop offset="1" stop-color="#0C111A"/></linearGradient></defs>`
       +g+`<g id="draw"></g>`+veil+`<g id="cross"></g></svg>`;
   }
@@ -369,10 +439,11 @@
     const layer=box.querySelector('#cross'); const ro=$('readout'); if(!layer||!CHART)return;
     const i=Math.max(0,Math.min(CHART.cands.length-1, Math.round((vbX-PADX)/CHART.slot-0.5)));
     const cx=CHART.x(i), c=CHART.cands[i], price=CHART.hi-(vbY-PADTOP)/CHART.plotH*(CHART.hi-CHART.lo);
-    layer.innerHTML=`<line class="cross-l" x1="${cx.toFixed(1)}" y1="${PADTOP}" x2="${cx.toFixed(1)}" y2="${H-PADBOT}"/><line class="cross-l" x1="${PADX}" y1="${vbY.toFixed(1)}" x2="${W-PADX}" y2="${vbY.toFixed(1)}"/>`;
+    layer.innerHTML=`<line class="cross-l" x1="${cx.toFixed(1)}" y1="${PADTOP}" x2="${cx.toFixed(1)}" y2="${(CHART.H-PADBOT).toFixed(1)}"/><line class="cross-l" x1="${PADX}" y1="${vbY.toFixed(1)}" x2="${W-PADX}" y2="${vbY.toFixed(1)}"/>`;
     const hidden=i>=CHART.histLen && box.querySelector('.veil') && parseFloat(box.querySelector('.veil').style.opacity)>0;
     const up=c.c>=c.o;
-    if(hidden){ ro.innerHTML=`<span class="k">cursor</span> ${price.toFixed(2)}`; }
+    if(vbY>CHART.priceBot){ ro.innerHTML=`<span class="k">indicator pane</span>`; }
+    else if(hidden){ ro.innerHTML=`<span class="k">cursor</span> ${price.toFixed(2)}`; }
     else { ro.innerHTML=`<span class="k">O</span>${c.o.toFixed(2)} <span class="k">H</span>${c.h.toFixed(2)} <span class="k">L</span>${c.l.toFixed(2)} <span class="k">C</span><span class="${up?'up':'dn'}">${c.c.toFixed(2)}</span>`+(c.t?`<br><span class="k">${c.t}</span>`:''); }
     ro.classList.add('show');
   }
@@ -380,12 +451,13 @@
 
   /* ---------- state ---------- */
   const S={deck:[],i:0,phase:'await',tf:'D',tool:'none',drawings:[],temp:null,dragging:false,
-           bosses:[],mode:'rep',bossIdx:0,replaying:false,
+           bosses:[],mode:'rep',bossIdx:0,replaying:false,studyMode:false,
+           ind:{ma20:false,ma50:false,ema21:false,bb:false,osc:'none'},
            stats:{streak:0,best:0,total:0,correct:0,xp:0}, tStart:0, lastWrong:false, fastStreak:0, tiltShown:false};
   const cur=()=> S.mode==='boss' ? S.bosses[S.bossIdx] : S.deck[S.i];
 
   let teaserSetup=null;
-  function paintTeaser(revealed){ $('teaserBox').innerHTML=renderBase(teaserSetup,revealed,'D'); }
+  function paintTeaser(revealed){ $('teaserBox').innerHTML=renderBase(teaserSetup,revealed,'D'); if(CHART) $('teaserBox').style.aspectRatio='1000 / '+CHART.H; }
 
   function goArena(seed){
     $('landing').classList.remove('active'); $('arena').classList.add('active');
@@ -399,6 +471,7 @@
     const setup=cur();
     const old=$('arenaBox').querySelector('svg'); if(old) old.remove();
     $('arenaBox').insertAdjacentHTML('afterbegin', renderBase(setup,revealed,S.tf));
+    if(CHART) $('arenaBox').style.aspectRatio = '1000 / '+CHART.H;
     paintDraw($('arenaBox'), S.drawings, null);
   }
 
@@ -409,8 +482,8 @@
     $('callRow').style.display='block'; $('reveal').classList.remove('show'); $('verdict').classList.remove('show');
     $('aBull').disabled=false; $('aBear').disabled=false;
     setToolsEnabled(true);
-    $('aBadge').textContent = boss ? 'Boss' : 'Mystery';
-    $('aMeta').textContent = boss ? 'read the setup — ending hidden' : 'ending hidden';
+    if(S.studyMode){ $('aBadge').textContent=setup.ticker||'—'; $('aMeta').textContent=(boss&&setup.title?setup.title+' · ':'')+(setup.date||''); }
+    else { $('aBadge').textContent = boss ? 'Boss' : 'Mystery'; $('aMeta').textContent = boss ? 'read the setup — ending hidden' : 'ending hidden'; }
     $('aIdx').textContent = boss ? `BOSS ${S.bossIdx+1}/${S.bosses.length}` : 'REP '+(S.stats.total+1);
     if(boss && setup.headline){ $('bossNews').textContent=setup.headline; $('bossBanner').classList.add('show'); }
     else $('bossBanner').classList.remove('show');
@@ -475,8 +548,8 @@
     $('toolHint').textContent = t==='none'?'cursor':(t==='trend'?'drag a trendline':(t==='hline'?'click to place a level':'drag to set fib range')); }
   function setToolsEnabled(on){ document.querySelectorAll('#toolbar .tool').forEach(b=>{ if(b.dataset.tool!=='none'||b.dataset.act) b.disabled=!on; }); if(!on){ setTool('none'); } }
 
-  function vbFromEvent(e){ const svg=$('arenaBox').querySelector('svg'); if(!svg)return null; const r=svg.getBoundingClientRect();
-    return {x:(e.clientX-r.left)/r.width*W, y:(e.clientY-r.top)/r.height*H}; }
+  function vbFromEvent(e){ const svg=$('arenaBox').querySelector('svg'); if(!svg||!CHART)return null; const r=svg.getBoundingClientRect();
+    return {x:(e.clientX-r.left)/r.width*W, y:(e.clientY-r.top)/r.height*CHART.H}; }
 
   function wireTools(){
     document.querySelectorAll('[data-tool]').forEach(b=> b.onclick=()=>{ if(b.disabled)return; setTool(b.dataset.tool); });
@@ -486,14 +559,23 @@
       S.tf=b.dataset.tf; document.querySelectorAll('[data-tf]').forEach(x=>x.classList.toggle('active',x===b));
       S.drawings=[]; S.temp=null; drawArena(S.phase==='revealed'); });
 
+    const rerender=()=>{ S.drawings=[]; drawArena(S.phase==='revealed'); };
+    document.querySelectorAll('[data-ind]').forEach(b=> b.onclick=()=>{ const k=b.dataset.ind; S.ind[k]=!S.ind[k]; b.classList.toggle('active',S.ind[k]); rerender(); });
+    document.querySelectorAll('[data-osc]').forEach(b=> b.onclick=()=>{ if(S.ind.osc===b.dataset.osc)return; S.ind.osc=b.dataset.osc; document.querySelectorAll('[data-osc]').forEach(x=>x.classList.toggle('active',x===b)); rerender(); });
+    document.querySelectorAll('[data-study]').forEach(b=> b.onclick=()=>{ const v=b.dataset.study==='study'; if(S.studyMode===v)return; S.studyMode=v;
+      document.querySelectorAll('[data-study]').forEach(x=>x.classList.toggle('active',x===b));
+      if(S.phase==='await'){ const setup=cur(),boss=S.mode==='boss';
+        if(S.studyMode){$('aBadge').textContent=setup.ticker||'—';$('aMeta').textContent=(boss&&setup.title?setup.title+' · ':'')+(setup.date||'');}
+        else {$('aBadge').textContent=boss?'Boss':'Mystery';$('aMeta').textContent=boss?'read the setup — ending hidden':'ending hidden';} } });
+
     const box=$('arenaBox');
     box.addEventListener('pointerdown', e=>{
-      if(S.phase!=='await'||S.tool==='none')return; const v=vbFromEvent(e); if(!v)return; box.setPointerCapture(e.pointerId);
+      if(S.phase!=='await'||S.tool==='none')return; const v=vbFromEvent(e); if(!v||v.y>CHART.priceBot)return; box.setPointerCapture(e.pointerId);
       if(S.tool==='hline'){ S.drawings.push({type:'h',y:v.y}); paintDraw(box,S.drawings,null); }
       else { S.dragging=true; S.temp={type:S.tool==='trend'?'t':'f',x1:v.x,y1:v.y,x2:v.x,y2:v.y}; }
     });
     box.addEventListener('pointermove', e=>{ const v=vbFromEvent(e); if(!v)return;
-      if(S.dragging&&S.temp){ S.temp.x2=v.x; S.temp.y2=v.y; paintDraw(box,S.drawings,S.temp); }
+      if(S.dragging&&S.temp){ S.temp.x2=v.x; S.temp.y2=Math.min(v.y,CHART.priceBot); paintDraw(box,S.drawings,S.temp); }
       else if(S.tool==='none'||S.phase==='revealed'){ paintCross(box,v.x,v.y); }
     });
     function endDraw(){ if(S.dragging&&S.temp){ const d=S.temp; if(Math.hypot(d.x2-d.x1,d.y2-d.y1)>6)S.drawings.push(d); S.temp=null; S.dragging=false; paintDraw(box,S.drawings,null); } }
