@@ -625,15 +625,16 @@
   function lbLoadSDK(){ return new Promise((res,rej)=>{ if(window.supabase)return res();
     const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); }
   async function lbInit(){ if(!lbConfigured())return; try{ await lbLoadSDK(); sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
-    const {data}=await sb.auth.getSession(); if(data&&data.session) lbUser=data.session.user; }catch(e){ sb=null; } }
-  async function lbJoin(name){ if(!sb){ await lbInit(); } if(!sb)return false;
-    try{ if(!lbUser){ const {data,error}=await sb.auth.signInAnonymously(); if(error)return false; lbUser=data.user; }
-      lbName=name.slice(0,24); localStorage.setItem('cm-name',lbName); await lbSync(true); return true; }catch(e){ return false; } }
+    const {data}=await sb.auth.getSession(); if(data&&data.session) lbUser=data.session.user; }catch(e){ console.error('[ChartMatch] Supabase init failed:',e); sb=null; } }
+  let lbLastErr='';
+  async function lbJoin(name){ if(!sb){ await lbInit(); } if(!sb){ lbLastErr='Could not connect to Supabase — check the URL/key and your console (F12) for details.'; return false; }
+    try{ if(!lbUser){ const {data,error}=await sb.auth.signInAnonymously(); if(error){ console.error('[ChartMatch] signInAnonymously failed:',error); lbLastErr=error.message||'Sign-in failed.'; return false; } lbUser=data.user; }
+      lbName=name.slice(0,24); localStorage.setItem('cm-name',lbName); await lbSync(true); return true; }catch(e){ console.error('[ChartMatch] lbJoin failed:',e); lbLastErr=e.message||'Unknown error.'; return false; } }
   async function lbSync(force){ if(!sb||!lbUser||!lbName)return; const now=Date.now(); if(!force&&now-lbSyncT<2500)return; lbSyncT=now;
     const s=S.stats, acc=s.total?Math.round(s.correct/s.total*100):0;
-    try{ await sb.from('profiles').upsert({id:lbUser.id,name:lbName,xp:s.xp,best_streak:s.best,total_calls:s.total,correct_calls:s.correct,accuracy:acc,updated_at:new Date().toISOString()}); }catch(e){} }
+    try{ const {error}=await sb.from('profiles').upsert({id:lbUser.id,name:lbName,xp:s.xp,best_streak:s.best,total_calls:s.total,correct_calls:s.correct,accuracy:acc,updated_at:new Date().toISOString()}); if(error)console.error('[ChartMatch] score sync failed:',error); }catch(e){ console.error('[ChartMatch] score sync threw:',e); } }
   async function lbFetch(){ if(!sb)return null;
-    try{ const {data}=await sb.from('profiles').select('id,name,xp,best_streak,accuracy,total_calls').gte('total_calls',5).order('xp',{ascending:false}).limit(50); return data||[]; }catch(e){ return []; } }
+    try{ const {data,error}=await sb.from('profiles').select('id,name,xp,best_streak,accuracy,total_calls').gte('total_calls',5).order('xp',{ascending:false}).limit(50); if(error){console.error('[ChartMatch] leaderboard fetch failed:',error); return [];} return data||[]; }catch(e){ console.error('[ChartMatch] leaderboard fetch threw:',e); return []; } }
 
   function levelFor(xp){ const L=[['Market Sage',1000],['Floor Veteran',500],['Consistent',200],['Disciplined',50],['Beginner',0]]; return (L.find(l=>xp>=l[1])||L[L.length-1])[0]; }
 
@@ -648,9 +649,14 @@
     if(!sb) await lbInit();
     if(!lbUser || !lbName){
       html+=`<div class="lb-join"><div class="lb-note">Pick a display name to join the global board:</div>
-        <div class="lb-joinrow"><input id="lbNameInput" maxlength="24" placeholder="e.g. DeltaDan" value="${lbName.replace(/"/g,'')}"/><button class="btn-go" id="lbJoinBtn">Join</button></div></div>`;
+        <div class="lb-joinrow"><input id="lbNameInput" maxlength="24" placeholder="e.g. DeltaDan" value="${lbName.replace(/"/g,'')}"/><button class="btn-go" id="lbJoinBtn">Join</button></div>
+        <div class="lb-note lb-err" id="lbErr" style="display:none; margin-top:10px"></div></div>`;
       body.innerHTML=html;
-      $('lbJoinBtn').onclick=async()=>{ const v=$('lbNameInput').value.trim(); if(!v)return; $('lbJoinBtn').textContent='…'; const ok=await lbJoin(v); if(ok)openLeaderboard(); else {$('lbJoinBtn').textContent='Retry'; } };
+      const doJoin=async()=>{ const v=$('lbNameInput').value.trim(); if(!v)return; $('lbJoinBtn').textContent='…'; $('lbJoinBtn').disabled=true;
+        const ok=await lbJoin(v); if(ok)openLeaderboard(); else { $('lbJoinBtn').textContent='Retry'; $('lbJoinBtn').disabled=false;
+          const eb=$('lbErr'); eb.style.display='block'; eb.textContent='⚠ '+(lbLastErr||'Something went wrong.')+' Check the browser console (F12) for details.'; } };
+      $('lbJoinBtn').onclick=doJoin;
+      $('lbNameInput').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); doJoin(); } });
       return;
     }
     html+=`<div class="lb-note">Loading the board…</div>`; body.innerHTML=html;
@@ -683,7 +689,10 @@
     if(S.mode==='boss')S.bossIdx=0; else S.i=0;
     loadCard();
   });
-  document.addEventListener('keydown',e=>{ const inA=$('arena').classList.contains('active');
+  document.addEventListener('keydown',e=>{
+    const tag=(e.target&&e.target.tagName)||''; if(tag==='INPUT'||tag==='TEXTAREA'||e.target.isContentEditable)return;
+    if($('lbModal').classList.contains('show'))return;
+    const inA=$('arena').classList.contains('active');
     if(e.key==='b'||e.key==='B'||e.key==='ArrowUp'){e.preventDefault(); inA?(S.phase==='await'&&submit('bullish')):$('tBull').click();}
     else if(e.key==='n'||e.key==='N'||e.key==='ArrowDown'){e.preventDefault(); inA?(S.phase==='await'&&submit('bearish')):$('tBear').click();}
     else if((e.key==='Enter'||e.key===' ')&&inA&&S.phase==='revealed'){e.preventDefault(); next();}
