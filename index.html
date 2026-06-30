@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ChartMatch — Read the chart. Call the move.</title>
+<meta name="description" content="Train your trading eye on real historical stock charts. See half the chart, call what happens next, and get caught when you start trading on tilt." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0A0E14; --ink2:#0C111A; --panel:#121A26; --panel2:#16202E;
+    --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.14);
+    --text:#E8EDF4; --muted:#8593A6; --faint:#5A6677;
+    --bull:#22D39A; --bull-dim:rgba(34,211,154,.14);
+    --bear:#FF5C7A; --bear-dim:rgba(255,92,122,.14);
+    --accent:#7C6CFF; --accent-dim:rgba(124,108,255,.16);
+    --display:'Space Grotesk',system-ui,sans-serif;
+    --body:'Inter',system-ui,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,monospace;
+    --r:16px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; font-family:var(--body); color:var(--text); background:var(--ink);
+    -webkit-font-smoothing:antialiased; line-height:1.5;
+    background-image:
+      radial-gradient(900px 500px at 85% -8%, rgba(124,108,255,.10), transparent 60%),
+      radial-gradient(700px 420px at 0% 0%, rgba(34,211,154,.06), transparent 55%);
+    background-attachment:fixed;
+  }
+  a{color:inherit}
+  button{font-family:inherit}
+  .wrap{max-width:1120px; margin:0 auto; padding:0 22px}
+  .mono{font-family:var(--mono)}
+  .eyebrow{font-family:var(--mono); font-size:11px; letter-spacing:.28em; text-transform:uppercase; color:var(--accent); font-weight:500}
+
+  /* nav */
+  .nav{position:sticky; top:0; z-index:40; backdrop-filter:blur(12px); background:rgba(10,14,20,.62); border-bottom:1px solid var(--line)}
+  .nav-in{display:flex; align-items:center; gap:14px; height:62px}
+  .logo{display:flex; align-items:center; gap:10px; font-family:var(--display); font-weight:700; letter-spacing:-.01em; font-size:18px}
+  .logo .mark{width:26px; height:26px; border-radius:8px; background:linear-gradient(135deg,var(--accent),#5a48e0); display:grid; place-items:center; box-shadow:0 4px 14px rgba(124,108,255,.4)}
+  .logo .mark svg{width:15px; height:15px}
+  .nav .spacer{flex:1}
+  .nav .stat-mini{font-family:var(--mono); font-size:12px; color:var(--muted); display:none; gap:16px}
+  .nav .stat-mini b{color:var(--text); font-weight:700}
+  .pill-btn{border:1px solid var(--line2); background:transparent; color:var(--text); padding:9px 16px; border-radius:999px; font-weight:600; font-size:13.5px; cursor:pointer; transition:.16s}
+  .pill-btn:hover{border-color:var(--accent); background:var(--accent-dim)}
+
+  /* hero */
+  .hero{padding:54px 0 30px}
+  .hero-grid{display:grid; grid-template-columns:1.05fr .95fr; gap:46px; align-items:center}
+  .h-title{font-family:var(--display); font-weight:700; font-size:clamp(38px,6vw,62px); line-height:1.02; letter-spacing:-.025em; margin:18px 0 0}
+  .h-title .g{color:var(--bull)}
+  .h-sub{color:var(--muted); font-size:18px; max-width:38ch; margin:20px 0 28px}
+  .cta{display:inline-flex; align-items:center; gap:10px; background:var(--accent); color:#fff; border:none; padding:15px 26px; border-radius:999px; font-weight:700; font-size:15.5px; cursor:pointer; box-shadow:0 10px 30px rgba(124,108,255,.35); transition:.16s}
+  .cta:hover{transform:translateY(-2px); box-shadow:0 14px 36px rgba(124,108,255,.45)}
+  .cta svg{width:17px; height:17px}
+  .feat{margin-top:30px; display:grid; gap:13px}
+  .feat li{display:flex; gap:12px; align-items:flex-start; color:var(--text); font-size:14.5px; list-style:none}
+  .feat .dot{margin-top:3px; width:18px; height:18px; border-radius:6px; flex:none; display:grid; place-items:center; background:var(--bull-dim)}
+  .feat .dot svg{width:11px; height:11px; color:var(--bull)}
+  .feat .dot.p{background:var(--accent-dim)} .feat .dot.p svg{color:var(--accent)}
+  .feat li b{font-weight:600}
+  .feat li span{color:var(--muted)}
+
+  /* teaser / arena card share styles */
+  .stage{background:linear-gradient(180deg,var(--panel),var(--ink2)); border:1px solid var(--line2); border-radius:22px; padding:16px; box-shadow:0 30px 70px rgba(0,0,0,.5); position:relative}
+  .stage-head{display:flex; align-items:center; justify-content:space-between; padding:6px 8px 12px}
+  .ticket{font-family:var(--mono); font-size:12px; color:var(--muted); display:flex; align-items:center; gap:9px}
+  .ticket .badge{background:var(--accent-dim); color:#b4abff; border:1px solid rgba(124,108,255,.3); padding:3px 9px; border-radius:999px; font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; font-weight:700}
+  .tf{font-family:var(--mono); font-size:11px; color:var(--faint); letter-spacing:.1em}
+
+  .chart-box{position:relative; width:100%; aspect-ratio:1000/430; border-radius:14px; overflow:hidden; background:rgba(0,0,0,.22); border:1px solid var(--line)}
+  .chart-box svg{display:block; width:100%; height:100%}
+  .grid-l{stroke:rgba(255,255,255,.05); stroke-width:1}
+  .nowline{stroke:rgba(255,255,255,.28); stroke-width:1.2; stroke-dasharray:3 4}
+  .veil-fill{fill:url(#veilg)}
+  .candle-up{fill:var(--bull)} .wick-up{stroke:var(--bull)}
+  .candle-dn{fill:var(--bear)} .wick-dn{stroke:var(--bear)}
+  .wick{stroke-width:1.4}
+  .fut{transition:opacity .05s linear}
+  .veil{transition:opacity .55s cubic-bezier(.22,1,.36,1)}
+  .qmark{fill:var(--faint); font-family:var(--display); font-weight:700; font-size:30px; text-anchor:middle; letter-spacing:.08em}
+  .veil-label{fill:var(--muted); font-family:var(--mono); font-size:11px; text-anchor:middle; letter-spacing:.14em}
+
+  .prompt{text-align:center; padding:16px 8px 6px; font-family:var(--display); font-weight:600; font-size:17px}
+  .calls{display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:6px 6px 8px}
+  .call{display:flex; flex-direction:column; align-items:center; gap:5px; padding:16px 10px; border-radius:14px; border:1.5px solid var(--line2); background:var(--panel2); cursor:pointer; transition:.14s; font-weight:700; font-size:15px}
+  .call .k{font-family:var(--mono); font-size:10px; color:var(--faint); font-weight:500; letter-spacing:.1em}
+  .call svg{width:22px; height:22px}
+  .call.bull{color:var(--bull)} .call.bull:hover:not(:disabled){background:var(--bull-dim); border-color:var(--bull); transform:translateY(-2px)}
+  .call.bear{color:var(--bear)} .call.bear:hover:not(:disabled){background:var(--bear-dim); border-color:var(--bear); transform:translateY(-2px)}
+  .call:disabled{opacity:.4; cursor:default}
+
+  /* verdict overlay */
+  .verdict{position:absolute; inset:0; display:grid; place-items:center; pointer-events:none}
+  .verdict-card{transform:scale(.8); opacity:0; transition:.32s cubic-bezier(.34,1.56,.64,1); background:rgba(10,14,20,.78); backdrop-filter:blur(6px); border:1px solid var(--line2); border-radius:16px; padding:18px 26px; text-align:center; box-shadow:0 20px 50px rgba(0,0,0,.55)}
+  .verdict.show .verdict-card{transform:scale(1); opacity:1}
+  .verdict-tag{font-family:var(--display); font-weight:700; font-size:26px; letter-spacing:-.01em}
+  .verdict-move{font-family:var(--mono); font-size:14px; margin-top:4px; color:var(--muted)}
+  .verdict-rule{font-family:var(--mono); font-size:11px; color:var(--faint); margin-top:8px; letter-spacing:.05em}
+
+  /* reveal panel below chart in arena */
+  .reveal{display:none; padding:6px 8px 4px; text-align:center}
+  .reveal.show{display:block; animation:fade .3s ease}
+  .coach{color:var(--muted); font-size:14px; max-width:46ch; margin:8px auto 0}
+  .next{margin-top:14px; display:inline-flex; align-items:center; gap:9px; background:var(--text); color:#0A0E14; border:none; padding:13px 24px; border-radius:999px; font-weight:700; font-size:14.5px; cursor:pointer; transition:.15s}
+  .next:hover{transform:translateY(-2px)}
+  .next svg{width:15px;height:15px}
+
+  /* arena stats bar */
+  .statbar{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:0 0 16px}
+  .stat{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:13px 16px}
+  .stat .lab{font-family:var(--mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--faint)}
+  .stat .val{font-family:var(--display); font-weight:700; font-size:24px; margin-top:3px; display:flex; align-items:baseline; gap:6px}
+  .stat .val small{font-family:var(--mono); font-size:12px; color:var(--muted); font-weight:500}
+  .flame{color:var(--bear)}
+
+  /* tilt nudge */
+  .tilt{display:none; align-items:flex-start; gap:11px; background:linear-gradient(90deg,var(--bear-dim),transparent); border:1px solid rgba(255,92,122,.3); border-left:3px solid var(--bear); border-radius:12px; padding:13px 15px; margin:0 0 16px; font-size:13.5px}
+  .tilt.show{display:flex; animation:fade .35s ease}
+  .tilt svg{width:18px; height:18px; color:var(--bear); flex:none; margin-top:1px}
+  .tilt b{color:var(--text)} .tilt span{color:var(--muted)}
+  .tilt button{margin-left:auto; background:none; border:none; color:var(--faint); cursor:pointer; font-size:18px; line-height:1; padding:0 2px}
+
+  .demo-flag{display:inline-flex; align-items:center; gap:7px; font-family:var(--mono); font-size:11px; color:var(--faint); border:1px solid var(--line); border-radius:999px; padding:5px 12px; margin-top:18px}
+  .demo-flag .d{width:7px; height:7px; border-radius:50%; background:var(--bear)}
+
+  .foot{border-top:1px solid var(--line); margin-top:50px; padding:26px 0; color:var(--faint); font-size:13px; text-align:center}
+  .foot .mono{color:var(--muted)}
+
+  @keyframes fade{from{opacity:0; transform:translateY(4px)} to{opacity:1; transform:translateY(0)}}
+
+  .view{display:none} .view.active{display:block}
+
+  @media(min-width:760px){ .nav .stat-mini{display:flex} }
+  @media(max-width:860px){
+    .hero-grid{grid-template-columns:1fr; gap:30px}
+    .h-sub{max-width:none}
+    .hero{padding:34px 0 14px}
+  }
+  @media(prefers-reduced-motion:reduce){
+    *{animation:none !important; transition:none !important}
+  }
+  :focus-visible{outline:2px solid var(--accent); outline-offset:3px; border-radius:6px}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="wrap nav-in">
+    <div class="logo">
+      <span class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M3 17l5-6 4 3 7-9" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      ChartMatch
+    </div>
+    <div class="spacer"></div>
+    <div class="stat-mini" id="navStats" aria-hidden="true">
+      <span>STREAK <b id="navStreak">0</b></span>
+      <span>ACC <b id="navAcc">—</b></span>
+    </div>
+    <button class="pill-btn" id="navCta">Start training</button>
+  </div>
+</nav>
+
+<!-- ================= LANDING ================= -->
+<section class="view active" id="landing">
+  <div class="wrap hero">
+    <div class="hero-grid">
+      <div>
+        <span class="eyebrow">Chart-reading trainer</span>
+        <h1 class="h-title">See half the chart.<br>Call what <span class="g">happens next.</span></h1>
+        <p class="h-sub">ChartMatch hides the ending of a real historical stock chart. You predict up or down, then watch what actually happened — and it catches you the moment you start trading on tilt.</p>
+        <button class="cta" id="heroCta">Start training
+          <svg viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <ul class="feat">
+          <li><span class="dot"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l4 4 10-11" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><b>Real historical charts</b> <span>— the ending stays hidden until you call it.</span></div></li>
+          <li><span class="dot"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l4 4 10-11" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><b>An instant verdict</b> <span>— see the real move and a one-line read on every call.</span></div></li>
+          <li><span class="dot p"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3v10m0 4v.5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg></span><div><b>A nudge when you're rushing</b> <span>— speed up after a loss and it tells you you're tilting.</span></div></li>
+        </ul>
+      </div>
+
+      <!-- live teaser: the hero IS the game -->
+      <div class="stage" aria-label="Sample chart">
+        <div class="stage-head">
+          <div class="ticket"><span class="badge">Mystery</span> <span id="tTf">Daily</span></div>
+          <div class="tf">your call counts →</div>
+        </div>
+        <div class="chart-box" id="teaserBox"></div>
+        <div class="prompt">Where does it go next?</div>
+        <div class="calls">
+          <button class="call bull" id="tBull"><svg viewBox="0 0 24 24" fill="none"><path d="M5 17l6-6 4 4 4-8" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>Bullish<span class="k">↑ / B</span></button>
+          <button class="call bear" id="tBear"><svg viewBox="0 0 24 24" fill="none"><path d="M5 7l6 6 4-4 4 8" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>Bearish<span class="k">↓ / N</span></button>
+        </div>
+      </div>
+    </div>
+
+    <div style="text-align:center">
+      <span class="demo-flag" id="demoFlag"><span class="d"></span> Running on sample data — drop in <span class="mono">&nbsp;chart-library.json&nbsp;</span> for real charts</span>
+    </div>
+  </div>
+</section>
+
+<!-- ================= ARENA ================= -->
+<section class="view" id="arena">
+  <div class="wrap" style="padding-top:26px">
+    <div class="statbar">
+      <div class="stat"><div class="lab">Streak</div><div class="val"><span class="flame" aria-hidden="true">▲</span><span id="sStreak">0</span> <small>best <span id="sBest">0</span></small></div></div>
+      <div class="stat"><div class="lab">Accuracy</div><div class="val"><span id="sAcc">—</span> <small><span id="sN">0</span> calls</small></div></div>
+      <div class="stat"><div class="lab">XP</div><div class="val"><span id="sXp">0</span></div></div>
+    </div>
+
+    <div class="tilt" id="tilt" role="status">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div><b>You're speeding up after a loss.</b> <span>That's tilt — the fast revenge call is how accounts bleed out. Slow the next one down.</span></div>
+      <button id="tiltClose" aria-label="Dismiss">×</button>
+    </div>
+
+    <div class="stage">
+      <div class="stage-head">
+        <div class="ticket"><span class="badge" id="aBadge">Mystery</span> <span id="aMeta">Daily · ending hidden</span></div>
+        <div class="tf" id="aIdx">REP 1</div>
+      </div>
+      <div class="chart-box" id="arenaBox">
+        <div class="verdict" id="verdict"><div class="verdict-card"><div class="verdict-tag" id="vTag">—</div><div class="verdict-move" id="vMove"></div><div class="verdict-rule" id="vRule"></div></div></div>
+      </div>
+
+      <div id="callRow">
+        <div class="prompt">Where does it go next?</div>
+        <div class="calls">
+          <button class="call bull" id="aBull"><svg viewBox="0 0 24 24" fill="none"><path d="M5 17l6-6 4 4 4-8" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>Bullish<span class="k">↑ / B</span></button>
+          <button class="call bear" id="aBear"><svg viewBox="0 0 24 24" fill="none"><path d="M5 7l6 6 4-4 4 8" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>Bearish<span class="k">↓ / N</span></button>
+        </div>
+      </div>
+
+      <div class="reveal" id="reveal" aria-live="polite">
+        <p class="coach" id="coach"></p>
+        <button class="next" id="nextBtn">Next chart <svg viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="foot wrap">
+  <span class="mono">ChartMatch</span> · educational training only — not financial advice. &nbsp;Sample data shown until a real chart library is loaded.
+</div>
+
+<script>
+"use strict";
+(function(){
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const N_HIST = 60, N_FUT = 30;
+
+  /* ---------- synthetic candle generator (shaped like the real library) ---------- */
+  function rand(){ return Math.random(); }
+  function makeSeries(){
+    const n = N_HIST + N_FUT;
+    let price = 40 + rand()*360;
+    const out = [];
+    // regime parameters
+    let drift = (rand()-0.5)*0.004;
+    let vol = 0.008 + rand()*0.022;
+    for(let i=0;i<n;i++){
+      // occasional regime change
+      if(rand()<0.06){ drift = (rand()-0.5)*0.006; vol = 0.008 + rand()*0.026; }
+      const shock = rand()<0.03 ? (rand()-0.5)*vol*6 : 0;
+      const ret = drift + (rand()-0.5)*vol*2 + shock;
+      const open = price;
+      const close = Math.max(1, open*(1+ret));
+      const hi = Math.max(open,close)*(1+rand()*vol*0.9);
+      const lo = Math.min(open,close)*(1-rand()*vol*0.9);
+      out.push({o:open,h:hi,l:lo,c:close});
+      price = close;
+    }
+    const histEnd = out[N_HIST-1].c, futEnd = out[n-1].c;
+    return {
+      history: out.slice(0,N_HIST),
+      future: out.slice(N_HIST),
+      answer: futEnd>=histEnd ? 'bullish':'bearish',
+      movePct: ((futEnd-histEnd)/histEnd)*100,
+      ticker:'SAMPLE', date:'sample data', real:false
+    };
+  }
+  function buildDeck(k){ const d=[]; for(let i=0;i<k;i++) d.push(makeSeries()); return d; }
+
+  /* ---------- try to load a real library, else use samples ---------- */
+  let usingReal = false;
+  async function loadLibrary(){
+    try{
+      const r = await fetch('./chart-library.json', {cache:'no-store'});
+      if(!r.ok) throw 0;
+      const j = await r.json();
+      const items = [].concat(j.reps||[], j.bosses||[]);
+      const norm = items.map(it=>{
+        const h=it.history, f=it.future;
+        const he=h[h.length-1].c, fe=f[f.length-1].c;
+        return {history:h, future:f, answer: fe>=he?'bullish':'bearish',
+                movePct:((fe-he)/he)*100, ticker:it.ticker||'—',
+                date:it.date||it.label||'', title:it.title||it.label||null,
+                headline:it.macroHeadline||null, real:true};
+      }).filter(x=>x.history&&x.future&&x.history.length>10&&x.future.length>2);
+      if(norm.length){ usingReal=true; return shuffle(norm); }
+    }catch(e){/* fall through to samples */}
+    return buildDeck(40);
+  }
+  function shuffle(a){ a=a.slice(); for(let i=a.length-1;i>0;i--){const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]];} return a; }
+
+  /* ---------- chart rendering (SVG candlesticks) ---------- */
+  const W=1000,H=430,PADX=14,PADTOP=16,PADBOT=16;
+  function renderChart(setup, revealed){
+    const all = setup.history.concat(setup.future);
+    let lo=Infinity, hi=-Infinity;
+    all.forEach(c=>{ if(c.l<lo)lo=c.l; if(c.h>hi)hi=c.h; });
+    const pad=(hi-lo)*0.08||1; lo-=pad; hi+=pad;
+    const plotW=W-PADX*2, plotH=H-PADTOP-PADBOT;
+    const n=all.length, slot=plotW/n, bw=Math.max(2.5, slot*0.62);
+    const x=i=> PADX + slot*i + slot/2;
+    const y=p=> PADTOP + (hi-p)/(hi-lo)*plotH;
+    const dividerX = PADX + slot*N_HIST;
+
+    let g='';
+    // gridlines
+    for(let k=0;k<=4;k++){ const yy=PADTOP+plotH*k/4; g+=`<line class="grid-l" x1="${PADX}" y1="${yy.toFixed(1)}" x2="${W-PADX}" y2="${yy.toFixed(1)}"/>`; }
+    // candles
+    function candle(c,i,isFut){
+      const up=c.c>=c.o; const cls=up?'up':'dn';
+      const cx=x(i), yo=y(c.o), yc=y(c.c), yh=y(c.h), yl=y(c.l);
+      const top=Math.min(yo,yc), bh=Math.max(1.4,Math.abs(yc-yo));
+      const op = isFut ? (revealed?1:0) : 1;
+      const futCls = isFut?' fut':'';
+      return `<g class="${futCls}" style="opacity:${op}">`
+        + `<line class="wick wick-${cls}" x1="${cx.toFixed(1)}" y1="${yh.toFixed(1)}" x2="${cx.toFixed(1)}" y2="${yl.toFixed(1)}"/>`
+        + `<rect class="candle-${cls}" x="${(cx-bw/2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="1"/></g>`;
+    }
+    setup.history.forEach((c,i)=> g+=candle(c,i,false));
+    setup.future.forEach((c,i)=> g+=candle(c,N_HIST+i,true));
+    // now line
+    g+=`<line class="nowline" x1="${dividerX.toFixed(1)}" y1="${PADTOP}" x2="${dividerX.toFixed(1)}" y2="${H-PADBOT}"/>`;
+    // veil over future
+    const vw=W-PADX-dividerX;
+    g+=`<g class="veil" style="opacity:${revealed?0:1}">`
+      +`<rect class="veil-fill" x="${dividerX.toFixed(1)}" y="0" width="${(vw+PADX).toFixed(1)}" height="${H}"/>`
+      +`<text class="qmark" x="${(dividerX+vw/2).toFixed(1)}" y="${(H/2-4).toFixed(1)}">?</text>`
+      +`<text class="veil-label" x="${(dividerX+vw/2).toFixed(1)}" y="${(H/2+22).toFixed(1)}">HIDDEN</text></g>`;
+
+    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${revealed?'Revealed chart':'Partial chart with hidden ending'}">`
+      + `<defs><linearGradient id="veilg" x1="0" x2="1" y1="0" y2="0">`
+      + `<stop offset="0" stop-color="#0A0E14" stop-opacity="0.55"/><stop offset="0.18" stop-color="#0C111A" stop-opacity="0.96"/><stop offset="1" stop-color="#0C111A"/></linearGradient></defs>`
+      + g + `</svg>`;
+  }
+
+  /* ---------- state ---------- */
+  const S={ deck:[], i:0, phase:'await', stats:{streak:0,best:0,total:0,correct:0,xp:0},
+            tStart:0, lastWrong:false, fastStreak:0, tiltShown:false };
+
+  const $=id=>document.getElementById(id);
+
+  /* teaser uses its own one-off setup */
+  let teaserSetup=null;
+  function paintTeaser(revealed){ $('teaserBox').innerHTML = renderChart(teaserSetup, revealed); }
+
+  function goArena(seedGuess){
+    $('landing').classList.remove('active');
+    $('arena').classList.add('active');
+    $('navStats').setAttribute('aria-hidden','false');
+    window.scrollTo({top:0, behavior: reduce?'auto':'smooth'});
+    // if a teaser call was made, score it as the first rep
+    if(seedGuess){
+      S.deck[0] = teaserSetup;
+      loadCard(0);
+      submit(seedGuess);
+    } else {
+      loadCard(0);
+    }
+  }
+
+  function loadCard(idx){
+    S.i=idx; S.phase='await';
+    const setup=S.deck[idx];
+    $('arenaBox').querySelectorAll('svg').forEach(s=>s.remove());
+    $('arenaBox').insertAdjacentHTML('afterbegin', renderChart(setup,false));
+    $('callRow').style.display='block';
+    $('reveal').classList.remove('show');
+    $('verdict').classList.remove('show');
+    $('aBull').disabled=false; $('aBear').disabled=false;
+    $('aBadge').textContent = setup.title ? 'Scenario' : 'Mystery';
+    $('aMeta').textContent = setup.headline ? setup.headline : 'Daily · ending hidden';
+    $('aIdx').textContent = 'REP '+(S.stats.total+1);
+    S.tStart=performance.now();
+  }
+
+  function submit(dir){
+    if(S.phase!=='await') return;
+    const dt=(performance.now()-S.tStart)/1000;
+    const setup=S.deck[S.i];
+    const correct = dir===setup.answer;
+    S.phase='revealed';
+    // reveal chart
+    $('arenaBox').querySelectorAll('svg').forEach(s=>s.remove());
+    $('arenaBox').insertAdjacentHTML('afterbegin', renderChart(setup,true));
+    $('aBull').disabled=true; $('aBear').disabled=true;
+    $('callRow').style.display='none';
+    $('aBadge').textContent = setup.real ? (setup.ticker||'—') : 'Sample';
+    $('aMeta').textContent = setup.real ? (setup.date||'') : 'sample data';
+
+    // stats
+    S.stats.total++; if(correct){S.stats.correct++; S.stats.streak++; S.stats.xp+=Math.round(50+ (dt<8?15:0)); if(S.stats.streak>S.stats.best)S.stats.best=S.stats.streak;}
+    else {S.stats.streak=0; S.stats.xp+=5;}
+    paintStats();
+
+    // verdict
+    const mv=setup.movePct, sign=mv>=0?'+':'';
+    $('vTag').textContent = correct?'Correct':'Missed';
+    $('vTag').style.color = correct?'var(--bull)':'var(--bear)';
+    $('vMove').textContent = `actual move  ${sign}${mv.toFixed(1)}%`;
+    $('vRule').textContent = setup.real ? `${setup.ticker} · ${setup.date}` : 'sample data — real charts load from chart-library.json';
+    requestAnimationFrame(()=> requestAnimationFrame(()=> $('verdict').classList.add('show')));
+
+    // coaching
+    $('coach').textContent = coachLine(correct, mv, dt);
+    $('reveal').classList.add('show');
+
+    // tilt detection: fast call right after a loss
+    if(S.lastWrong && dt<1.6){ S.fastStreak++; } else { S.fastStreak=0; }
+    if(S.fastStreak>=2 && !S.tiltShown){ $('tilt').classList.add('show'); S.tiltShown=true; }
+    S.lastWrong = !correct;
+  }
+
+  function coachLine(correct,mv,dt){
+    const big=Math.abs(mv)>6;
+    if(correct && big) return 'Clean read on a big move. The trend was already in the candles before the break — that\'s the instinct you\'re building.';
+    if(correct) return dt<1.5 ? 'Right — but that was fast. Make sure you\'re reading the structure, not just guessing the vibe.' : 'Right call. You let the prior structure tell you where pressure was building.';
+    if(big) return 'Missed a large move. Look back: where did momentum actually shift? Naming it is how the pattern sticks next time.';
+    return 'Wrong, but it was a small move — these are coin-flips. Skipping the unclear ones is a real skill too.';
+  }
+
+  function paintStats(){
+    $('sStreak').textContent=S.stats.streak; $('sBest').textContent=S.stats.best;
+    $('sXp').textContent=S.stats.xp; $('sN').textContent=S.stats.total;
+    const acc = S.stats.total? Math.round(S.stats.correct/S.stats.total*100)+'%':'—';
+    $('sAcc').textContent=acc;
+    $('navStreak').textContent=S.stats.streak; $('navAcc').textContent=acc;
+  }
+
+  function next(){
+    let ni=S.i+1;
+    if(ni>=S.deck.length){ // extend
+      if(usingReal){ S.deck=S.deck.concat(shuffle(S.deck)); }
+      else { S.deck=S.deck.concat(buildDeck(40)); }
+    }
+    loadCard(ni);
+    if(!reduce) window.scrollTo({top:0,behavior:'smooth'});
+  }
+
+  /* ---------- wire up ---------- */
+  function startFromLanding(){ goArena(null); }
+  $('heroCta').onclick=startFromLanding;
+  $('navCta').onclick=()=>{ if($('arena').classList.contains('active')) return; startFromLanding(); };
+  $('tBull').onclick=()=>{ paintTeaser(true); setTimeout(()=>goArena('bullish'),120); };
+  $('tBear').onclick=()=>{ paintTeaser(true); setTimeout(()=>goArena('bearish'),120); };
+  $('aBull').onclick=()=>submit('bullish');
+  $('aBear').onclick=()=>submit('bearish');
+  $('nextBtn').onclick=next;
+  $('tiltClose').onclick=()=>$('tilt').classList.remove('show');
+
+  document.addEventListener('keydown',e=>{
+    const inArena=$('arena').classList.contains('active');
+    if(e.key==='b'||e.key==='B'||e.key==='ArrowUp'){ e.preventDefault(); inArena? (S.phase==='await'&&submit('bullish')) : $('tBull').click(); }
+    else if(e.key==='n'||e.key==='N'||e.key==='ArrowDown'){ e.preventDefault(); inArena? (S.phase==='await'&&submit('bearish')) : $('tBear').click(); }
+    else if((e.key==='Enter'||e.key===' ')&&inArena&&S.phase==='revealed'){ e.preventDefault(); next(); }
+  });
+
+  /* ---------- init ---------- */
+  (async function init(){
+    S.deck = await loadLibrary();
+    if(usingReal){ $('demoFlag').style.display='none'; }
+    teaserSetup = usingReal ? S.deck[0] : makeSeries();
+    paintTeaser(false);
+    paintStats();
+  })();
+})();
+</script>
+</body>
+</html>
